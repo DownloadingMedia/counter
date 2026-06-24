@@ -3,22 +3,29 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 const COUNT_FILE = path.join(__dirname, 'count.json');
-const API_SECRET = process.env.API_SECRET || 'dm-counter-secret';
 
 app.use(cors({
   origin: function (origin, callback) {
     callback(null, true);
   },
   methods: ['GET', 'POST'],
-  allowedHeaders: ['Content-Type', 'x-api-key']
+  allowedHeaders: ['Content-Type']
 }));
 
 app.use(express.json());
+
+const hitLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 1,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later.' }
+});
 
 function readCount() {
   try {
@@ -33,20 +40,12 @@ function writeCount(count) {
   fs.writeFileSync(COUNT_FILE, JSON.stringify({ count }, null, 2), 'utf8');
 }
 
-function authenticate(req, res, next) {
-  const key = req.headers['x-api-key'];
-  if (!key || key !== API_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
 app.get('/api/downloads', (req, res) => {
   const count = readCount();
   res.json({ count });
 });
 
-app.post('/api/downloads/hit', authenticate, (req, res) => {
+app.post('/api/downloads/hit', hitLimiter, (req, res) => {
   const count = readCount() + 1;
   writeCount(count);
   res.json({ count });
