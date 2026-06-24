@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -17,14 +16,6 @@ app.use(cors({
 }));
 
 app.use(express.json());
-
-const hitLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 1,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, try again later.' }
-});
 
 function readCount() {
   try {
@@ -44,7 +35,7 @@ app.get('/api/downloads', (req, res) => {
   res.json({ count });
 });
 
-app.post('/api/downloads/hit', hitLimiter, (req, res) => {
+app.post('/api/downloads/hit', (req, res) => {
   const count = readCount() + 1;
   writeCount(count);
   res.json({ count });
