@@ -1,11 +1,35 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const fs = require('fs');
-const path = require('path');
+const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const COUNT_FILE = path.join(__dirname, 'count.json');
+const MONGO_URI = process.env.MONGO_URI;
+
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch(err => console.error('MongoDB connection error:', err));
+
+const counterSchema = new mongoose.Schema({
+  name: { type: String, default: 'downloads', unique: true },
+  count: { type: Number, default: 0 }
+});
+
+const Counter = mongoose.model('Counter', counterSchema);
+
+// Initializing the counter document if it doesn't exist
+async function initCounter() {
+  try {
+    const doc = await Counter.findOne({ name: 'downloads' });
+    if (!doc) {
+      await Counter.create({ name: 'downloads', count: 0 });
+    }
+  } catch (err) {
+    console.error('Error initializing counter:', err);
+  }
+}
+mongoose.connection.once('open', initCounter);
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -17,28 +41,26 @@ app.use(cors({
 
 app.use(express.json());
 
-function readCount() {
+app.get('/api/downloads', async (req, res) => {
   try {
-    const raw = fs.readFileSync(COUNT_FILE, 'utf8');
-    return JSON.parse(raw).count || 0;
-  } catch {
-    return 0;
+    const doc = await Counter.findOne({ name: 'downloads' });
+    res.json({ count: doc ? doc.count : 0 });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
   }
-}
-
-function writeCount(count) {
-  fs.writeFileSync(COUNT_FILE, JSON.stringify({ count }, null, 2), 'utf8');
-}
-
-app.get('/api/downloads', (req, res) => {
-  const count = readCount();
-  res.json({ count });
 });
 
-app.post('/api/downloads/hit', (req, res) => {
-  const count = readCount() + 1;
-  writeCount(count);
-  res.json({ count });
+app.post('/api/downloads/hit', async (req, res) => {
+  try {
+    const doc = await Counter.findOneAndUpdate(
+      { name: 'downloads' },
+      { $inc: { count: 1 } },
+      { new: true, upsert: true }
+    );
+    res.json({ count: doc.count });
+  } catch (err) {
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
 app.get('/', (req, res) => {
