@@ -18,13 +18,11 @@ const counterSchema = new mongoose.Schema({
 
 const Counter = mongoose.model('Counter', counterSchema);
 
-// ─── Caching & Batching Logic ────────────────────────────────────────────────
 let localCount = 0;
 let pendingHits = 0;
 let isLoaded = false;
 let isSyncing = false;
 
-// Initializing the counter document if it doesn't exist
 async function initCounter() {
   try {
     const doc = await Counter.findOne({ name: 'downloads' });
@@ -42,12 +40,11 @@ async function initCounter() {
 }
 mongoose.connection.once('open', initCounter);
 
-// Background task to flush hits to DB every 5 seconds
 setInterval(async () => {
   if (pendingHits > 0 && !isSyncing && isLoaded) {
     isSyncing = true;
     const hitsToSync = pendingHits;
-    pendingHits = 0; // Reset immediately to capture new hits during DB await
+    pendingHits = 0;
 
     try {
       const doc = await Counter.findOneAndUpdate(
@@ -56,13 +53,10 @@ setInterval(async () => {
         { new: true, upsert: true }
       );
       if (doc) {
-        // True up the local count with DB (in case of multiple server instances)
-        // plus any hits that accumulated while we were awaiting the DB
-        localCount = doc.count + pendingHits; 
+        localCount = doc.count + pendingHits;
       }
     } catch (err) {
       console.error('Error syncing counter to DB:', err);
-      // Restore hits so they aren't lost
       pendingHits += hitsToSync;
     } finally {
       isSyncing = false;
@@ -81,12 +75,10 @@ app.use(cors({
 app.use(express.json());
 
 app.get('/api/downloads', async (req, res) => {
-  // Return immediately from memory (ultra-fast, no DB cost)
   if (isLoaded) {
     return res.json({ count: localCount + pendingHits });
   }
-  
-  // Fallback if requested before init finishes
+
   try {
     const doc = await Counter.findOne({ name: 'downloads' });
     if (doc) {
@@ -100,7 +92,6 @@ app.get('/api/downloads', async (req, res) => {
 });
 
 app.post('/api/downloads/hit', (req, res) => {
-  // Just increment in memory, the setInterval will batch it to DB
   localCount++;
   pendingHits++;
   res.json({ count: localCount });
